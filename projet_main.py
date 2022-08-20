@@ -128,33 +128,6 @@ def loss_hat_bounded_case(x: Tuple[np.ndarray, float], xi_mat: np.ndarray, lamb:
     return losses.mean() if average else losses, {'optimal_k': optimal_k, 'optimal_xis': optimal_xis}
 
 
-# def offline_WDRO_solver(xi_mat: np.ndarray, N_iterations: int, rho: float, alpha: float, lamb: float,
-#                                      epsilon: float, lower_bound: np.ndarray, upper_bound: np.ndarray):
-#     x_dim = xi_mat.shape[1]
-#     x = (np.ones(x_dim) * 1 / x_dim, 0.1)
-#     for iteration in range(N_iterations):
-#         # stage 1: for fixed x,tau find argmax xi
-#         _, optimal_dict = loss_hat_bounded_case(x=x, xi_mat=xi_mat, lamb=lamb, epsilon=epsilon, rho=rho, alpha=alpha,
-#                                                 lower_bound=lower_bound, upper_bound=upper_bound)
-#         # optimal_k = optimal_dict['optimal_k']
-#         optimal_xis = optimal_dict['optimal_xis']
-#
-#         # stage 2: for fixed xi, find argmin x, tau
-#         portfolio = cp.Variable(xi_mat.shape[1])
-#         tau = cp.Variable()
-#
-#         a1, a2, b1, b2 = loss_coefficients(rho, alpha)
-#         k_1_vec = optimal_xis @ portfolio * a1 + tau * b1
-#         k_2_vec = optimal_xis @ portfolio * a2 + tau * b2
-#         final_vec = cp.maximum(k_1_vec, k_2_vec)
-#         objective = cp.Minimize(cp.sum(final_vec) / xi_mat.shape[0])
-#         constraints = [portfolio >= 0, cp.sum(portfolio) == 1, tau >= 0]
-#         prob = cp.Problem(objective, constraints)
-#         prob.solve()
-#         x = (portfolio.value, tau.value)
-#     return x
-
-
 def offline_WDRO_solver(xi_mat: np.ndarray, rho: float, alpha: float,
                         epsilon: float, lower_bound: np.ndarray, upper_bound: np.ndarray):
     N, p_dim = xi_mat.shape
@@ -230,61 +203,6 @@ def OMD_WDRO_bounded_case(xi_mat: np.ndarray, rho: float, alpha: float, lamb: fl
     return portfolio, tau
 
 
-# def OGD_SAA_bounded_case(xi_mat: np.ndarray, rho: float, alpha: float,
-#                          lower_bound: np.ndarray, upper_bound: np.ndarray, eta_tilde: float):
-#     """ This is just SGD """
-#     assert eta_tilde > 0
-#     eta = eta_tilde
-#     x_dim = xi_mat.shape[1]
-#     theta_p = np.zeros(x_dim)
-#     portfolio = None
-#     theta_tau = 0
-#     a1, a2, b1, b2 = loss_coefficients(rho, alpha)
-#     for i, xi_i in enumerate(xi_mat):  # online optimization starts here
-#         eta = eta_tilde / math.sqrt(i+1)
-#         portfolio = np.clip(theta_p / eta, lower_bound, upper_bound)
-#         _, optimal_dict = loss(x=(portfolio, theta_tau / eta), xi_mat=xi_i.reshape(1, -1),
-#                                rho=rho, alpha=alpha, average=False)
-#         optimal_k = optimal_dict['optimal_k'].item()
-#         a = [a1, a2][optimal_k]
-#         b = [b1, b2][optimal_k]
-#
-#         # updates
-#         theta_p -= a
-#         theta_tau -= b
-#     return portfolio, theta_tau / eta
-
-
-# def OMD_WDRO_unbounded_case(xi_mat: np.ndarray, rho: float, alpha: float, epsilon: list or float,
-#                             lower_bound: np.ndarray, upper_bound: np.ndarray, eta_tilde: float):
-#     assert eta_tilde > 0
-#     x_dim = xi_mat.shape[1]
-#     xi_bar = np.max(np.abs(np.concatenate([lower_bound, upper_bound]))).item()
-#     if isinstance(epsilon, float):
-#         epsilon = [epsilon] * xi_mat.shape[0]
-#     portfolio = np.ones(x_dim) * 1 / x_dim
-#     tau = 0.1
-#     a1, a2, b1, b2 = loss_coefficients(rho, alpha)
-#     for i, xi_i in enumerate(xi_mat):  # online optimization starts here
-#         epsilon_i = epsilon[i]
-#         _, optimal_dict = loss_hat_bounded_case(x=(portfolio, tau), xi_mat=xi_i.reshape((1, -1)), lamb=0,
-#                                                 epsilon=epsilon_i, rho=rho, alpha=alpha,
-#                                                 lower_bound=lower_bound, upper_bound=upper_bound)
-#         optimal_k = optimal_dict['optimal_k'].item()
-#         j_star = np.argmax(np.abs(portfolio))
-#         eta = eta_tilde / math.sqrt(i + 1)
-#         z = np.sign(portfolio)[j_star] * epsilon_i - xi_i
-#
-#         # updating y
-#         portfolio = portfolio * np.exp(-z * eta)
-#         portfolio = portfolio / portfolio.sum()
-#
-#         # updating tau
-#         b = [b1, b2][optimal_k]
-#         tau = max(xi_bar * abs(alpha - rho) / (rho * (alpha - 1)), min(xi_bar / rho, tau - eta * b))
-#     return portfolio, tau
-
-
 def get_model_funcs(rho, alpha, lamb, epsilon_float, epsilon_list, eta_tilde, lower, upper):
     return {'SAA': partial(offline_SAA_solver_func, rho=rho, alpha=alpha),
             'WDRO_bounded': partial(offline_WDRO_solver, rho=rho, alpha=alpha, epsilon=epsilon_float,
@@ -305,22 +223,8 @@ def plot_func(metrics: list, model: str, datas, rho=None, alpha=None, lamb=None,
     scores = defaultdict(list)
     for data in tqdm(datas):
         trained_model = model_funcs[model](xi_mat=data)
+        assert trained_model[0] is not None, "trained model is none"
         for metric in metrics:
-            # if model == 'OSAA' and len(data) < 200:
-            #     scores[metric].append(0)
-            #     continue
-
-            # if metric == 'online-out-of-sample':
-            #     continue
-            # if len(data)<200:
-            #     scores[metric].append(0)
-            #     continue
-
-            # if dashed_line and metric == 'online-out-of-sample':
-            #     continue
-            # if dashed_line and len(data) < 200:
-            #     scores[metric].append(0)
-            #     continue
             if metric == 'in-sample':
                 if metric in ['SAA', 'OSAA']:
                     value = loss(x=trained_model, xi_mat=data, rho=rho, alpha=alpha, average=True)[0]
@@ -362,8 +266,8 @@ def plot_func(metrics: list, model: str, datas, rho=None, alpha=None, lamb=None,
 
 
 def new_data_generation_method(n: int):
-    M = np.random.normal(0, 0.5, size=(n,n))
-    M = np.zeros((n,n))
+    M = np.random.normal(0, 4e-3, size=(n,n))
+    # M = np.zeros((n,n))
     np.fill_diagonal(M, 0.02)
     cov = M @ M.T
     rng = np.random.default_rng()
